@@ -1,0 +1,18 @@
+# Default ignored files
+/shelf/
+/workspace.xml
+
+
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+
+
+# IntelliJ related
+*.iml
+*.xml
+*.ipr
+*.iws
+.idea/
