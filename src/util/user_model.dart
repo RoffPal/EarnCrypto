@@ -7,8 +7,9 @@ class MyUser{
   String upline; // this is the id of the this user's upline (the user who referred this.user)
   String link;
 
-  double balance = 0.000, refBal = 0, cpc; // referralBalance and (Cost Per Click)
+  double balance = 0.1, refBal = 0, cpc; // referralBalance and (Cost Per Click)
   int referrals = 0;
+
 
   MyUser(this.id,{this.upline}): link = private.getUserUniqueID(id);   // Upline is optional because some users might not be referred
 

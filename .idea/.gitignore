@@ -2,6 +2,7 @@
 /shelf/
 /workspace.xml
 
+src/util/sensitive_info.dart
 
 # Miscellaneous
 *.class
