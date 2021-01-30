@@ -7,13 +7,19 @@ import 'package:firebase/firebase_io.dart';
 import 'util/sensitive_info.dart' as private;
 import 'util/user_model.dart';
 import 'util/payment.dart' as pay;
-
-import 'package:http/http.dart' as http;
+import 'package:path/path.dart';
+import 'package:sembast/sembast.dart';
+import 'package:sembast/sembast_io.dart';
 
 final DB_PATH = private.FIREBASE_PATH;
 final BOT_TOKEN = private.TELEGRAM_BOT_TOKEN;
 final bot = Telegram(BOT_TOKEN);
-FirebaseClient db = FirebaseClient.anonymous();
+final firebasedb = FirebaseClient.anonymous();
+final store = StoreRef.main();
+Database userDB;
+Database awaitingWithdrawalDB;
+TeleDart teledart;
+
 String bot_username,
     balance = "💰 Balance",
     task = "🛠 Tasks",
@@ -26,16 +32,13 @@ String bot_username,
     ads = "📊 Place Ads";
 
 void main() {
-  var teledart = TeleDart(bot, Event());
-  teledart.start().then((me) {
-    bot_username = me.username;
-    print('${me.username} is initialised');
-  });
+  initialize();
 
   // When User wants to withdraw with airtime
   teledart.onPhoneNumber().listen((event) async {
     dynamic withdrawalDetails =
-        await db.get("$DB_PATH/AwaitWithdrawal/${event.from.id}.json");
+        await getDetail(awaitingWithdrawalDB, event.from.id);
+
     if (withdrawalDetails != null) if (withdrawalDetails["address"] == null)
       dealWithPaymentAddress(event, withdrawalDetails);
     else
@@ -47,18 +50,18 @@ void main() {
   teledart.onCommand().listen((event) async {
     // checks if User already has a pending Withdrawal
     dynamic withdrawalDetails =
-        await db.get("$DB_PATH/AwaitWithdrawal/${event.from.id}.json");
+        await getDetail(awaitingWithdrawalDB, event.from.id);
 
     if (withdrawalDetails != null) {
       if (event.text.contains("cancel")) {
         event.reply("Withdrawal has been Cancelled",
             reply_markup: showBalanceMenu());
-        db.delete("$DB_PATH/AwaitWithdrawal/${event.from.id}.json");
+        await store.record(event.from.id).delete(awaitingWithdrawalDB);
       } else if (event.text.contains("max") &&
           withdrawalDetails["amount"] == null)
         dealWithWithdrawal(event,
             withdrawAmount:
-                (await getUserDetail(event.from.id))["balance"].toString());
+                (await getDetail(userDB, event.from.id))["balance"].toString());
       else
         event.reply(
             "Please Complete Withdrawal or Click /cancel to Stop the Process");
@@ -98,13 +101,13 @@ void main() {
   teledart.onMessage().listen((event) async {
     print("got 5the message: ${event.text}");
     dynamic withdrawalDetails =
-        await db.get("$DB_PATH/AwaitWithdrawal/${event.from.id}.json");
+        await getDetail(awaitingWithdrawalDB, event.from.id);
 
     if (withdrawalDetails != null) {
       if (event.text.contains(cancel.split(" ")[1].substring(1))) {
         event.reply("Withdrawal has been Cancelled",
             reply_markup: showBalanceMenu());
-        db.delete("$DB_PATH/AwaitWithdrawal/${event.from.id}.json");
+        deleteFromDatabase(awaitingWithdrawalDB, event.from.id);
       } else if (withdrawalDetails["amount"] == null)
         dealWithWithdrawal(event,
             withdrawAmount: event.text); // Tries to get amount from User
@@ -152,7 +155,7 @@ void main() {
 
 Future<void> dealWithWithdrawal(TeleDartMessage event,
     {String withdrawAmount}) async {
-  var user = MyUser.fromJson(await getUserDetail(event.chat.id));
+  var user = MyUser.fromJson(await getDetail(userDB, event.chat.id));
 
   if (withdrawAmount != null) {
     try {
@@ -163,7 +166,7 @@ Future<void> dealWithWithdrawal(TeleDartMessage event,
               "*${event.text}* is lower than minimum withdrawal\n\nMinimum Withdrawal: ${private.MIN_WITHDRAWAL.toStringAsFixed(2)}\n\nInput Amount To Withdraw again. 👇",
               parse_mode: "markdown");
         else {
-          db.patch("$DB_PATH/AwaitWithdrawal/${event.from.id.toString()}.json",
+          patch(awaitingWithdrawalDB, event.from.id,
               {"amount": withdrawAmount}); // Specify Amount to Withdraw
           event.reply("Please Select A Withdrawal Method:",
               parse_mode: "markdown",
@@ -187,9 +190,9 @@ Future<void> dealWithWithdrawal(TeleDartMessage event,
       event.reply("Please input a valid decimal number!");
     }
   } else if (user.balance >= private.MIN_WITHDRAWAL) {
-    db.patch("$DB_PATH/AwaitWithdrawal.json", {
-      event.from.id.toString(): {"type": "Initiated Withdrawal"}
-    });
+    store
+        .record(event.from.id)
+        .add(awaitingWithdrawalDB, {"type": "Initiated Withdrawal"});
     event.reply(
         "Click /max to withdraw total balance\nInput Amount To Withdraw. 👇\n\nMinimum: *\$${private.MIN_WITHDRAWAL.toStringAsFixed(2)}*",
         parse_mode: "markdown",
@@ -212,9 +215,7 @@ Future<void> specifyWithdrawal(CallbackQuery event) {
               text: "✅ ${event.data.toUpperCase()}", callback_data: "i")
         ]
       ]));
-
-  db.patch("$DB_PATH/AwaitWithdrawal/${event.from.id.toString()}.json",
-      {"type": event.data});
+  patch(awaitingWithdrawalDB, event.from.id, {"type": event.data});
 
   // You can create a method to request for specific address if payment is more dan jst bch and airtime
   Future.delayed(
@@ -239,7 +240,7 @@ Future<void> dealWithPaymentAddress(
               [KeyboardButton(text: "✅ Confirm"), KeyboardButton(text: cancel)]
             ], resize_keyboard: true),
             parse_mode: "markdowm");
-      db.patch("$DB_PATH/AwaitWithdrawal/${event.from.id.toString()}.json", {
+      patch(awaitingWithdrawalDB, event.from.id, {
         "address": event.text
       }); // Adds withdrawal address to the awaiting database
       break;
@@ -256,27 +257,35 @@ Future<void> registerUser(TeleDartMessage event) async {
       : null; // Holds reference to the Id of the upline if /start carries along a parameter
 
 // Here Ensures that a user never gets registered twice by first checking to see if the user already exits
-  if (await db.get("$DB_PATH/Users/$userID.json") == null) {
+  if (await getDetail(userDB, event.from.id) == null) {
     if (ref != null) {
       // Deals with making sure the upline gets its count of referrals updated
       ref = private.resolveUniqueID(ref);
-      dynamic upline = await db.get("$DB_PATH/Users/$ref.json");
+      dynamic upline = await getDetail(userDB, int.parse(ref));
 
       int cReferralsofUpline = int.parse(
           upline["referrals"]); // current number of referrals of upline
-      db.patch(
-          "$DB_PATH/Users/$ref.json", {"referrals": "${++cReferralsofUpline}"});
+      patch(userDB, int.parse(ref), {"referrals": "${++cReferralsofUpline}"});
     }
-    db.patch("$DB_PATH/Users.json",
-        {"${userID.toString()}": MyUser(userID, upline: ref).toMap()});
+
+    store
+        .record(event.from.id)
+        .add(userDB, MyUser(event.from.id, upline: ref).toMap());
   } else
     print("User is already registered");
 } // Registers new Users into the database
 
-Future<dynamic> getUserDetail(int userID) =>
-    db.get("$DB_PATH/Users/$userID.json");
+Future<dynamic> getDetail(Database db, int userID) =>
+    store.record(userID).get(db);
+Future<dynamic> deleteFromDatabase(Database db, dynamic toDelete) =>
+    store.record(toDelete).delete(db);
+
+Future<dynamic> patch(
+        Database db, int userID, Map<dynamic, dynamic> changeTo) =>
+    store.record(userID).update(db, changeTo);
+
 Future<void> dealWithReferral(TeleDartMessage event) async {
-  var user = await getUserDetail(event.chat.id); // looks too complex
+  var user = await getDetail(userDB, event.chat.id); // looks too complex
   String r = private.rCheck(user["referrals"], user["refBal"], user["link"]);
   event.reply(
     r,
@@ -285,7 +294,7 @@ Future<void> dealWithReferral(TeleDartMessage event) async {
 }
 
 Future<void> showBalance(TeleDartMessage event) async {
-  var user = MyUser.fromJson(await getUserDetail(event.chat.id));
+  var user = MyUser.fromJson(await getDetail(userDB, event.chat.id));
   String b = private.bCheck(user.balance.toStringAsFixed(2));
   event.reply(b, parse_mode: "markdown", reply_markup: showBalanceMenu());
 }
@@ -304,4 +313,21 @@ ReplyMarkup showBalanceMenu() => ReplyKeyboardMarkup(keyboard: [
       [KeyboardButton(text: back)]
     ], resize_keyboard: true);
 
+void initialize() {
+  teledart = TeleDart(bot, Event());
+
+  teledart.start().then((me) {
+    bot_username = me.username;
+    print('${me.username} is initialised');
+  });
+
+  databaseFactoryIo.openDatabase(join("Database", "Users.db")).then((value) {
+    userDB = value;
+  });
+  databaseFactoryIo
+      .openDatabase(join("Database", "awaitingWithdrawal.db"))
+      .then((value) {
+    awaitingWithdrawalDB = value;
+  });
+}
 // {}   []

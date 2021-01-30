@@ -9,3 +9,4 @@ environment:
 dependencies:
   teledart: ^0.0.46
   firebase: ^8.0.0
+  sembast: ^2.4.8+1
