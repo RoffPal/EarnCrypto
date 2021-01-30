@@ -1,21 +1,20 @@
 import 'dart:convert';
 
+import 'package:teledart/model.dart';
+
 import 'sensitive_info.dart' as private;
 import 'package:http/http.dart' as http;
+import '../main.dart' as main;
 
 
-
-String access_token = private.changeableAccessToken;  // Today's Token.........would later expire
 final RELOADLY_AUDIENCE = "https://topups-sandbox.reloadly.com";
-
-
 
 class Airtime{
 static int expiry, timeTokenGenerated;
 static String token;
 static Map<String, String> headers;
 
-Future<void> getToken(){
+static Future<void> getToken(){
   Map<String, String> header = {
     'Content-Type': 'application/json',
     'Accept': 'application/json'
@@ -43,10 +42,27 @@ Future<dynamic> getBalance() async{
   return  http.get("$RELOADLY_AUDIENCE/accounts/balance", headers: headers).then((value) => JsonDecoder().convert(value.body));
 }
 
-Future<String> getOperatorsOFCountry(String isoCode) async{
+static Future<void> determineOperator(TeleDartMessage event, dynamic details) async{
   await getToken();
-  return http.get("$RELOADLY_AUDIENCE/operators/countries/$isoCode", headers: headers).then((value) => value.body);
+    http.get("$RELOADLY_AUDIENCE/operators/auto-detect/phone/${event.text}/countries/NG?&includeBundles=true", headers: headers).then((value) async {
+      dynamic air = JsonDecoder().convert(value.body);
+      print(air);
+      event.reply("Are you sure you want to send *\$${details["amount"]}* Worth of  *${air["name"].split(" ")[0]} Top Up*  to *${event.text}*?\n\nFX rate: *${await main.db.get("${main.DB_PATH}/FX-rate.json")} / \$1.00*",
+          reply_markup: ReplyKeyboardMarkup(
+              keyboard: [
+                [KeyboardButton(text: "✅ Confirm"), KeyboardButton(text: main.cancel)]
+              ],
+              resize_keyboard: true
+          ),
+          parse_mode: "markdown");
+      main.db.patch("${main.DB_PATH}/AwaitWithdrawal/${event.from.id.toString()}.json", {"address":event.text});  // Adds withdrawal address to the awaiting database
+      main.db.patch("${main.DB_PATH}/AwaitWithdrawal/${event.from.id.toString()}.json", {"type":air["id"]});
+    });
 }
+}
+
+
+class Crypto{
 
 }
 
