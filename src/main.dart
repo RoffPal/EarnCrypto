@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:teledart/model.dart';
 import 'package:teledart/teledart.dart';
 import 'package:teledart/telegram.dart';
@@ -20,11 +18,10 @@ Database userDB;
 Database awaitingWithdrawalDB;
 TeleDart teledart;
 
-String bot_username,
-    balance = "💰 Balance",
+String balance = "💰 Balance",
     task = "🛠 Tasks",
-    sVid = "📺 Short Videos",
-    referrals = "🙌🏻 Referrals",
+    sVid = "📺 Video Ads",
+    referrals = "👬 Referrals",
     pp = "🕐 Payment Proof",
     withdraw = "💵 Withdraw",
     back = "🔝 Main Menu",
@@ -39,8 +36,10 @@ void main() {
     dynamic withdrawalDetails =
         await getDetail(awaitingWithdrawalDB, event.from.id);
 
-    if (withdrawalDetails != null) if (withdrawalDetails["address"] == null)
-      dealWithPaymentAddress(event, withdrawalDetails);
+    if (withdrawalDetails != null &&
+        withdrawalDetails["amount"] !=
+            null) if (withdrawalDetails["address"] == null)
+      await dealWithPaymentAddress(event, withdrawalDetails);
     else
       event.reply(
           "Please confirm or /cancel the the pending withdrawal request.");
@@ -48,101 +47,12 @@ void main() {
 
   // Command Listener
   teledart.onCommand().listen((event) async {
-    // checks if User already has a pending Withdrawal
-    dynamic withdrawalDetails =
-        await getDetail(awaitingWithdrawalDB, event.from.id);
-
-    if (withdrawalDetails != null) {
-      if (event.text.contains("cancel")) {
-        event.reply("Withdrawal has been Cancelled",
-            reply_markup: showBalanceMenu());
-        await store.record(event.from.id).delete(awaitingWithdrawalDB);
-      } else if (event.text.contains("max") &&
-          withdrawalDetails["amount"] == null)
-        dealWithWithdrawal(event,
-            withdrawAmount:
-                (await getDetail(userDB, event.from.id))["balance"].toString());
-      else
-        event.reply(
-            "Please Complete Withdrawal or Click /cancel to Stop the Process");
-    }
-
-    // On_Start Command
-    else if (event.text.contains("start")) {
-      print("UserID: ${event.from.id} And chatID: ${event.chat.id}");
-      event.reply(private.welcomeMsg(event.from.first_name),
-          parse_mode: "markdown", reply_markup: showMainMenu());
-      registerUser(event);
-    }
-
-    // On referral command
-    else if (event.text.contains(referrals.split(" ")[1].substring(1)))
-      dealWithReferral(event);
-
-    // On balance command
-    else if (event.text.contains(balance.split(" ")[1].substring(1)))
-      showBalance(event);
-
-    // On withdraw command
-    else if (event.text.contains(withdraw.split(" ")[1].substring(1)))
-      dealWithWithdrawal(event);
-
-    // On back or main command
-    else if (event.text.contains(back.split(" ")[1].substring(1))) {
-      event.reply(private.reminder,
-          parse_mode: "markdown", reply_markup: showMainMenu());
-    } else
-      event.reply(
-        "I do not understand this command.\n\nClick the /help command to get all my available commands.",
-      );
+    commandReceived(event);
   });
 
 // Message Listener
   teledart.onMessage().listen((event) async {
-    print("got 5the message: ${event.text}");
-    dynamic withdrawalDetails =
-        await getDetail(awaitingWithdrawalDB, event.from.id);
-
-    if (withdrawalDetails != null) {
-      if (event.text.contains(cancel.split(" ")[1].substring(1))) {
-        event.reply("Withdrawal has been Cancelled",
-            reply_markup: showBalanceMenu());
-        deleteFromDatabase(awaitingWithdrawalDB, event.from.id);
-      } else if (withdrawalDetails["amount"] == null)
-        dealWithWithdrawal(event,
-            withdrawAmount: event.text); // Tries to get amount from User
-      else if (withdrawalDetails["type"] == "Initiated Withdrawal")
-        event.reply(
-            "Please Select a Withdrawal Method Above. 👆\n\nOr Click /cancel to Stop Withdrawal");
-      else if (withdrawalDetails["address"] == null) {
-        if (withdrawalDetails["type"] == "airtime")
-          event.reply("You entered an invalid number");
-      } else if (event.text.contains("Confirm"))
-        // pay.startTransaction(WithdrawalDetails).then(event.reply(successful);
-        event.reply("Your withdrawal has been requested and is in progress ⏱.",
-            reply_markup: showMainMenu());
-      else
-        event.reply(
-            "Please confirm or /cancel the the pending withdrawal request.");
-    }
-
-    // On referral message
-    else if (event.text.contains(referrals.split(" ")[1].substring(1)))
-      dealWithReferral(event);
-
-    // On balance message
-    else if (event.text.contains(balance.split(" ")[1].substring(1)))
-      showBalance(event);
-
-    // On withdraw message
-    else if (event.text.contains(withdraw.split(" ")[1].substring(1)))
-      dealWithWithdrawal(event);
-
-    // On back or main menu message
-    else if (event.text.contains(back.split(" ")[1].substring(1))) {
-      event.reply(private.reminder,
-          parse_mode: "markdown", reply_markup: showMainMenu());
-    }
+    event.text != null ? messageReceived(event) : null;
   });
 
   teledart.onCallbackQuery().listen((event) {
@@ -163,7 +73,7 @@ Future<void> dealWithWithdrawal(TeleDartMessage event,
       if (withdrawAmountd <= user.balance) {
         if (withdrawAmountd < private.MIN_WITHDRAWAL)
           event.reply(
-              "*${event.text}* is lower than minimum withdrawal\n\nMinimum Withdrawal: ${private.MIN_WITHDRAWAL.toStringAsFixed(2)}\n\nInput Amount To Withdraw again. 👇",
+              "\$*${event.text}* is lower than the minimum withdrawal\n\nMinimum Withdrawal: \$*${private.MIN_WITHDRAWAL.toStringAsFixed(2)}*\n\nInput Amount To Withdraw again. 👇",
               parse_mode: "markdown");
         else {
           patch(awaitingWithdrawalDB, event.from.id,
@@ -184,17 +94,17 @@ Future<void> dealWithWithdrawal(TeleDartMessage event,
         }
       } else
         event.reply(
-            "Insufficient Fund\n\nYour Available balance is *\$${user.balance.toStringAsFixed(2)}*\n\nInput Amount To Withdraw again. 👇",
+            "Insufficient Fund\n\nYour Available balance is *\$${user.balance.toStringAsFixed(2)}*\nUse /max to withdraw your total balance\n\nInput Amount To Withdraw again. 👇",
             parse_mode: "markdown");
     } catch (FormatException) {
-      event.reply("Please input a valid decimal number!");
+      event.reply("Please input a valid number!");
     }
   } else if (user.balance >= private.MIN_WITHDRAWAL) {
     store
         .record(event.from.id)
         .add(awaitingWithdrawalDB, {"type": "Initiated Withdrawal"});
     event.reply(
-        "Click /max to withdraw total balance\nInput Amount To Withdraw. 👇\n\nMinimum: *\$${private.MIN_WITHDRAWAL.toStringAsFixed(2)}*",
+        "Click /max to withdraw total balance\n                      *OR*\nInput Amount To Withdraw. 👇\n\nMinimum: *\$${private.MIN_WITHDRAWAL.toStringAsFixed(2)}*",
         parse_mode: "markdown",
         reply_markup: ReplyKeyboardMarkup(keyboard: [
           [KeyboardButton(text: cancel)],
@@ -204,7 +114,7 @@ Future<void> dealWithWithdrawal(TeleDartMessage event,
         "Your Available balance is lower than the minimum withdrawal.\n\nAvailable balance:  \$${user.balance.toStringAsFixed(2)}\n\nMinimum withdrawal: \$${private.MIN_WITHDRAWAL.toStringAsFixed(2)}");
 } // Places User ID in the database to inidicate a withdrawal has been initiated and asks for amount to Withdraw
 
-Future<void> specifyWithdrawal(CallbackQuery event) {
+void specifyWithdrawal(CallbackQuery event) {
   bot.editMessageText("*Selected Withdrawal Method*✅",
       parse_mode: "markdown",
       chat_id: event.message.chat.id,
@@ -227,8 +137,7 @@ Future<void> specifyWithdrawal(CallbackQuery event) {
               : "Input the mobile number to top up: 👇"));
 }
 
-Future<void> dealWithPaymentAddress(
-    TeleDartMessage event, dynamic withdrawalDetails) {
+void dealWithPaymentAddress(TeleDartMessage event, dynamic withdrawalDetails) {
   switch (withdrawalDetails["type"]) {
     case "Bitcoin Cash (BCH)":
       if (event.text.length < 15)
@@ -249,7 +158,7 @@ Future<void> dealWithPaymentAddress(
   }
 } // Determines where to send payment to
 
-Future<void> registerUser(TeleDartMessage event) async {
+void registerUser(TeleDartMessage event) async {
   int userID = event.from.id;
   String msg = event.text;
   var ref = msg.split(" ").length > 1
@@ -257,20 +166,20 @@ Future<void> registerUser(TeleDartMessage event) async {
       : null; // Holds reference to the Id of the upline if /start carries along a parameter
 
 // Here Ensures that a user never gets registered twice by first checking to see if the user already exits
-  if (await getDetail(userDB, event.from.id) == null) {
+  if (await getDetail(userDB, userID) == null) {
     if (ref != null) {
       // Deals with making sure the upline gets its count of referrals updated
       ref = private.resolveUniqueID(ref);
       dynamic upline = await getDetail(userDB, int.parse(ref));
 
-      int cReferralsofUpline = int.parse(
-          upline["referrals"]); // current number of referrals of upline
-      patch(userDB, int.parse(ref), {"referrals": "${++cReferralsofUpline}"});
+      int cReferralsofUpline =
+          upline["referrals"]; // current number of referrals of upline
+      patch(userDB, int.parse(ref), {"referrals": ++cReferralsofUpline});
     }
 
     store
         .record(event.from.id)
-        .add(userDB, MyUser(event.from.id, upline: ref).toMap());
+        .add(userDB, MyUser(userID, upline: ref).toMap());
   } else
     print("User is already registered");
 } // Registers new Users into the database
@@ -315,10 +224,9 @@ ReplyMarkup showBalanceMenu() => ReplyKeyboardMarkup(keyboard: [
 
 void initialize() {
   teledart = TeleDart(bot, Event());
-
   teledart.start().then((me) {
-    bot_username = me.username;
     print('${me.username} is initialised');
+    private.bot = me;
   });
 
   databaseFactoryIo.openDatabase(join("Database", "Users.db")).then((value) {
@@ -329,5 +237,107 @@ void initialize() {
       .then((value) {
     awaitingWithdrawalDB = value;
   });
+}
+
+Future commandReceived(TeleDartMessage event) async {
+  // checks if User already has a pending Withdrawal
+  dynamic withdrawalDetails =
+      await getDetail(awaitingWithdrawalDB, event.from.id);
+
+  if (withdrawalDetails != null) {
+    if (event.text.contains("cancel")) {
+      event.reply("Withdrawal has been Cancelled",
+          reply_markup: showBalanceMenu());
+      await store.record(event.from.id).delete(awaitingWithdrawalDB);
+    } else if (event.text.contains("max") &&
+        withdrawalDetails["amount"] == null)
+      dealWithWithdrawal(event,
+          withdrawAmount:
+              (await getDetail(userDB, event.from.id))["balance"].toString());
+    else
+      event.reply(
+          "Please Complete Withdrawal or Click /cancel to Stop the Process");
+  }
+
+  // On_Start Command
+  else if (event.text.contains("start")) {
+    print("UserID: ${event.from.id} And chatID: ${event.chat.id}");
+    event.reply(private.welcomeMsg(event.from.first_name),
+        parse_mode: "markdown", reply_markup: showMainMenu());
+    registerUser(event);
+  }
+
+  // On referral command
+  else if (event.text.contains(referrals.split(" ")[1].substring(1)))
+    dealWithReferral(event);
+
+  // On balance command
+  else if (event.text.contains(balance.split(' ')[1].substring(1)))
+    showBalance(event);
+
+  // On withdraw command
+  else if (event.text.contains(withdraw.split(' ')[1].substring(1)))
+    dealWithWithdrawal(event);
+
+  // On back or main command
+  else if (event.text.contains(back.split(' ')[1].substring(1))) {
+    event.reply(private.reminder,
+        parse_mode: 'markdown', reply_markup: showMainMenu());
+  } else
+    event.reply(
+      'I do not understand this command.\n\nClick the /help command to get all my available commands.',
+    );
+}
+
+Future messageReceived(TeleDartMessage event) async {
+  print('got the message: ${event.text}');
+  dynamic withdrawalDetails =
+      await getDetail(awaitingWithdrawalDB, event.from.id);
+
+  if (withdrawalDetails != null) {
+    if (event.text.contains(cancel.split(' ')[1].substring(1))) {
+      event.reply('Withdrawal has been Cancelled',
+          reply_markup: showBalanceMenu());
+      await deleteFromDatabase(awaitingWithdrawalDB, event.from.id);
+    } else if (withdrawalDetails['amount'] == null)
+      dealWithWithdrawal(event,
+          withdrawAmount: event.text); // Tries to get amount from User
+    else if (withdrawalDetails['type'] == 'Initiated Withdrawal')
+      event.reply(
+          'Please Select a Withdrawal Method Above. 👆\n\nOr Click /cancel to Stop Withdrawal');
+    else if (withdrawalDetails['address'] == null) {
+      if (withdrawalDetails['type'] == 'airtime')
+        event.reply('You entered an invalid number');
+    } else if (event.text.contains('Confirm')) {
+      deleteFromDatabase(awaitingWithdrawalDB, event.from.id);
+      switch (withdrawalDetails['type']) {
+        case '':
+          pay.Crypto.sendCoins(event, withdrawalDetails);
+          break;
+        default:
+          pay.Airtime.topUpNumber(event, withdrawalDetails);
+      }
+    } else
+      event.reply(
+          'Please complete or /cancel the the ongoing withdrawal request.');
+  }
+
+  // On referral message
+  else if (event.text.contains(referrals.split(" ")[1].substring(1)))
+    dealWithReferral(event);
+
+  // On balance message
+  else if (event.text.contains(balance.split(" ")[1].substring(1)))
+    showBalance(event);
+
+  // On withdraw message
+  else if (event.text.contains(withdraw.split(" ")[1].substring(1)))
+    dealWithWithdrawal(event);
+
+  // On back or main menu message
+  else if (event.text.contains(back.split(" ")[1].substring(1))) {
+    event.reply(private.reminder,
+        parse_mode: "markdown", reply_markup: showMainMenu());
+  }
 }
 // {}   []

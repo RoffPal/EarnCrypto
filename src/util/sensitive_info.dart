@@ -1,21 +1,22 @@
 import 'dart:math';
 
-String hi = "🚀 Upgrade", reminder = "guy....... implement the reminder shit";
+import 'package:teledart/model.dart';
 
-final BOT_NAME = "EarnCrypto";
-final BOT_USERNAME = "earn_BCHbot";
-final TELEGRAM_BOT_TOKEN = "1518165141:AAHA6giT4q4TQEKaa4p22DicOERjkETuzzw";
+String hi = "➕ Deposit", reminder = "guy....... implement the reminder shit";
+
+User bot;
+final TELEGRAM_BOT_TOKEN = "1674002102:AAF8cDeVCiI_o2TG1r3BiSVnxXZlEaL5u4A";
 final FIREBASE_PATH = "https://cryptofx-0-default-rtdb.firebaseio.com";
 final RELOADLY_CLIENT_ID = "Oh8L6vawsDH3HP3v8ZFjLo4oMz5KpmFr";
 final RELOADLY_API_SECRET =
     "2dA60YbgnE-zjNzahuu5bFR0KwO5xm-RcqVQ9FtmEgvtvXjvR42c8f7IL7X2gbV";
-final double MIN_WITHDRAWAL = 0.1;
+final MIN_WITHDRAWAL = 0.1;
 
 String welcomeMsg(String name) =>
-    "Welcome *$name* 🔥\n\nI'm *${BOT_NAME}*, I pay you for completing simple tasks and watching short Videos.\n\nClick *📊 Tasks* to earn by completing tasks\nClick *📺 Short Videos* to earn by watching video ads\n\nYou can also create your own ads with /newad.";
+    "Hi *$name*🔥\n\nWelcome to *${bot.first_name} BOT* 🚀\n__Earn Instant Rewards!__\n\n🔹 Earn by completing tasks  *🛠 Tasks*\n🔹 Earn by watching video ads  *📺 Short Videos*\n\nYou can also place your own ads with /newad and generate more traffic to your business\n\nUse the /help command for more info.";
 
-String rCheck(dynamic downlines, dynamic refBal, dynamic link) =>
-    "You have *$downlines* referrals, and earned \$*${refBal}0*.\n\nTo refer people, send them to:\n\n[https://t.me/$BOT_USERNAME?start=$link](https://t.me/$BOT_USERNAME?start=$link)\n\nYou will earn *10%* of each user's earnings from tasks and short Videos";
+String rCheck(dynamic downlines, double refBal, dynamic link) =>
+    "*👬 REFERRAL SYSTEM*\n\nYou have *$downlines* referrals, and earned \$*${refBal.toStringAsFixed(2)}*.\n\nReferral Link:\n[https://t.me/${bot.username}?start=$link](https://t.me/${bot.username}?start=$link)\n\nYou earn *10%* from your referral earnings";
 
 String bCheck(dynamic balance) => "Available Balance: *\$$balance* ";
 
